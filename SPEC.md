@@ -35,7 +35,7 @@
 ## 4. 成果物
 - `SPEC.md`: 全体設計・進行計画
 - `specs/mock/*.md`: モックサービス仕様（WS/HTTP/互換性）
-- `specs/dag/*.md`: 将来の会話DAG/DB/サービス契約（初版）
+- `specs/chat/*.md`: 通常チャットアプリ仕様（DB/API/リアルタイム同期）
 - `example/`: FE/BE/DB の統合サンプル
 
 ## 5. システム概要
@@ -83,9 +83,9 @@
 | specs/mock/websocket-interface.md | FE 向け WS インタフェース仕様 |
 | specs/mock/http-interface.md | BE 向け HTTP 管理 API 仕様 |
 | specs/mock/compatibility.md | API Gateway WebSocket API 互換ポリシー |
-| specs/dag/db.md | PostgreSQL DAG schema and constraints |
-| specs/dag/jsonrpc-service.md | Go JSON-RPC backend API draft spec |
-| specs/dag/conversation-dag.md | Conversation DAG node model and operation contracts |
+| specs/chat/db.md | PostgreSQL チャットアプリ schema and constraints |
+| specs/chat/backend-api.md | BE の HTTP API と WebSocket route 処理仕様 |
+| specs/chat/realtime-flow.md | 接続管理とチャット同期フロー仕様 |
 
 ## 11. 次の作業
 - 上記 specs を起点に API 契約テストを先行作成

@@ -3,12 +3,6 @@
 - Write or update spec files and the following table after working
 - Place all spec files into `specs/` directory
 
-  | spec file                     | description                                         |
-  | ----------------------------- | --------------------------------------------------- |
-  | specs/dag/db.md               | PostgreSQL DAG schema and constraints               |
-  | specs/dag/jsonrpc-service.md  | Go JSON-RPC backend API draft spec                  |
-  | specs/dag/conversation-dag.md | Conversation DAG node model and operation contracts |
-
 ## Workflow Orchestration
 
 ### 1. Plan Node Default
