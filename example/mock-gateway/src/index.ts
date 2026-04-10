@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { serve } from 'hono/node-server';
+import { serve } from '@hono/node-server';
 import { ulid } from 'ulid';
 import { WebSocketServer, type WebSocket } from 'ws';
 
@@ -14,6 +14,7 @@ interface ConnectionInfo {
 type Integrations = Record<string, string>;
 
 const port = Number(process.env.PORT ?? 8787);
+const host = process.env.HOST ?? '0.0.0.0';
 const stage = process.env.STAGE ?? 'dev';
 const strictMode = (process.env.STRICT_COMPATIBILITY_MODE ?? 'true') === 'true';
 const integrations: Integrations = JSON.parse(process.env.ROUTE_INTEGRATIONS_JSON ?? '{}');
@@ -132,8 +133,8 @@ app.post('/_mock/broadcast', async (c) => {
 
 app.get('/healthz', (c) => c.json({ ok: true, stage, connections: connections.size }));
 
-const server = serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`mock-gateway listening on http://localhost:${info.port}`);
+const server = serve({ fetch: app.fetch, port, hostname: host }, (info) => {
+  console.log(`mock-gateway listening on http://${host}:${info.port}`);
 });
 
 const wss = new WebSocketServer({ noServer: true });

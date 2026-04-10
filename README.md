@@ -12,6 +12,7 @@ docker compose up --build
 - Frontend: http://localhost:5173
 - Backend health: http://localhost:3000/healthz
 - Mock Gateway health: http://localhost:8787/healthz
+- PostgreSQL (host): localhost:55432
 
 ## Example 構成
 

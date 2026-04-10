@@ -9,6 +9,7 @@
     "build": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "@hono/node-server": "^1.14.4",
     "hono": "^4.8.3",
     "ulid": "^2.4.0",
     "ws": "^8.18.2"

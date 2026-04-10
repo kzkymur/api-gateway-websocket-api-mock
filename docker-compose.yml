@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: chat
       POSTGRES_PASSWORD: chat
     ports:
-      - "5432:5432"
+      - "55432:5432"
     volumes:
       - ./example/backend/sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
@@ -35,7 +35,7 @@ services:
       PORT: 8787
       STAGE: dev
       STRICT_COMPATIBILITY_MODE: "true"
-      ROUTE_INTEGRATIONS_JSON: '{"$connect":"http://backend:3000/integrations/connect","$disconnect":"http://backend:3000/integrations/disconnect","$default":"http://backend:3000/integrations/default","joinRoom":"http://backend:3000/integrations/join-room","sendMessage":"http://backend:3000/integrations/send-message"}'
+      ROUTE_INTEGRATIONS_JSON: '{"$$connect":"http://backend:3000/integrations/connect","$$disconnect":"http://backend:3000/integrations/disconnect","$$default":"http://backend:3000/integrations/default","joinRoom":"http://backend:3000/integrations/join-room","sendMessage":"http://backend:3000/integrations/send-message"}'
     depends_on:
       - backend
     ports:

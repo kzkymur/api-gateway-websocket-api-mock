@@ -1,9 +1,10 @@
-import { serve } from 'hono/node-server';
+import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { Pool } from 'pg';
 import { ulid } from 'ulid';
 
 const port = Number(process.env.PORT ?? 3000);
+const host = process.env.HOST ?? '0.0.0.0';
 const dbUrl = process.env.DATABASE_URL ?? 'postgres://chat:chat@localhost:5432/chat';
 const gatewayBaseUrl = process.env.GATEWAY_BASE_URL ?? 'http://localhost:8787/dev';
 
@@ -191,6 +192,6 @@ app.post('/integrations/send-message', async (c) => {
   }
 });
 
-serve({ fetch: app.fetch, port }, (info) => {
-  console.log(`backend listening on ${info.port}`);
+serve({ fetch: app.fetch, port, hostname: host }, (info) => {
+  console.log(`backend listening on http://${host}:${info.port}`);
 });
