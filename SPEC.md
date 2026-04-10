@@ -86,6 +86,7 @@
 | specs/chat/db.md | PostgreSQL チャットアプリ schema and constraints |
 | specs/chat/backend-api.md | BE の HTTP API と WebSocket route 処理仕様 |
 | specs/chat/realtime-flow.md | 接続管理とチャット同期フロー仕様 |
+| specs/implementation/example-stack.md | 実装済み example スタックと検証項目 |
 
 ## 11. 次の作業
 - 上記 specs を起点に API 契約テストを先行作成
