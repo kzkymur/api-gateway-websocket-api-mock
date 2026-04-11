@@ -12,7 +12,7 @@ const routeIntegrations = JSON.stringify({
 });
 
 export default defineConfig({
-  testDir: './tests',
+  testDir: '../tests',
   timeout: 30_000,
   use: {
     baseURL: 'http://127.0.0.1:5173',
