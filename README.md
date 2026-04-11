@@ -26,3 +26,20 @@ docker compose up --build
 1. Frontend で `Create User/Room & Join` を押す
 2. `Send Message` を押す
 3. 画面ログに `chat.message.created` が出れば成功
+
+## E2E Test (Playwright)
+
+Run the following commands to execute the multi-client WebSocket E2E test:
+
+```bash
+cd example/frontend
+npm install
+npx playwright install chromium
+npx playwright install-deps chromium
+npm run test:e2e
+```
+
+What this test does:
+- Starts backend (`:3000`), mock gateway (`:8787`), and frontend (`:5173`) automatically via Playwright `webServer` config.
+- Opens two browser contexts and connects two WebSocket clients to `ws://127.0.0.1:8787/dev`.
+- Sends messages from both clients and verifies both connections remain open.

@@ -1,5 +1,6 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
+import { cors } from 'hono/cors';
 import { Pool } from 'pg';
 import { ulid } from 'ulid';
 
@@ -7,11 +8,21 @@ const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '0.0.0.0';
 const dbUrl = process.env.DATABASE_URL ?? 'postgres://chat:chat@localhost:5432/chat';
 const gatewayBaseUrl = process.env.GATEWAY_BASE_URL ?? 'http://localhost:8787/dev';
+const corsOrigin = process.env.CORS_ALLOW_ORIGIN ?? 'http://localhost:5173';
 
 const pool = new Pool({ connectionString: dbUrl });
 
 const app = new Hono();
 const roomSubscriptions = new Map<string, Set<string>>();
+
+app.use(
+  '/api/*',
+  cors({
+    origin: corsOrigin,
+    allowHeaders: ['Content-Type'],
+    allowMethods: ['GET', 'POST', 'OPTIONS']
+  })
+);
 
 const sendToConnection = async (connectionId: string, payload: unknown) => {
   const response = await fetch(`${gatewayBaseUrl}/@connections/${connectionId}`, {
