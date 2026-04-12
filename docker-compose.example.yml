@@ -1,0 +1,54 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: chat
+      POSTGRES_USER: chat
+      POSTGRES_PASSWORD: chat
+    ports:
+      - "55432:5432"
+    volumes:
+      - ./example/backend/sql/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chat -d chat"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ./example/backend
+    environment:
+      PORT: 3000
+      DATABASE_URL: postgres://chat:chat@db:5432/chat
+      GATEWAY_BASE_URL: http://mock-gateway:8787/dev
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "3000:3000"
+
+  mock-gateway:
+    build:
+      context: ./mock-gateway
+    environment:
+      PORT: 8787
+      STAGE: dev
+      STRICT_COMPATIBILITY_MODE: "true"
+      ROUTE_INTEGRATIONS_JSON: '{"$$connect":"http://backend:3000/integrations/connect","$$disconnect":"http://backend:3000/integrations/disconnect","$$default":"http://backend:3000/integrations/default","sendMessage":"http://backend:3000/integrations/send-message"}'
+    depends_on:
+      - backend
+    ports:
+      - "8787:8787"
+
+  frontend:
+    build:
+      context: ./example/frontend
+    environment:
+      VITE_API_BASE_URL: http://localhost:3000
+      VITE_WS_URL: ws://localhost:8787/dev
+    depends_on:
+      - backend
+      - mock-gateway
+    ports:
+      - "5173:5173"

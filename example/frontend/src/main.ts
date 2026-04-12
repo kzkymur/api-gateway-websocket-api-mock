@@ -5,9 +5,9 @@ const app = document.querySelector<HTMLDivElement>('#app');
 if (!app) throw new Error('app not found');
 
 app.innerHTML = `
-  <h1>Chat Example</h1>
+  <h1>Global Board Example</h1>
   <div>
-    <button id="setup">Create User/Room & Join</button>
+    <button id="setup">Create User</button>
     <button id="send">Send Message</button>
   </div>
   <pre id="log" style="height:320px; overflow:auto; border:1px solid #ccc; padding:8px;"></pre>
@@ -20,7 +20,6 @@ const log = (data: unknown) => {
 };
 
 let userId = '';
-let roomId = '';
 let ws: WebSocket | null = null;
 
 const connectWs = () => {
@@ -36,32 +35,17 @@ document.querySelector<HTMLButtonElement>('#setup')!.onclick = async () => {
   const user = await fetch(`${apiBase}/api/users`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ displayName: 'alice' })
-  }).then((r) => r.json());
-
-  const room = await fetch(`${apiBase}/api/rooms`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ name: 'general' })
+    body: JSON.stringify({ displayName: `user-${Date.now()}` })
   }).then((r) => r.json());
 
   userId = user.id;
-  roomId = room.id;
-
-  await fetch(`${apiBase}/api/rooms/${roomId}/join`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ userId })
-  });
-
-  ws?.send(JSON.stringify({ action: 'joinRoom', roomId, userId }));
-  log({ userId, roomId, setup: 'done' });
+  log({ userId, setup: 'done' });
 };
 
 document.querySelector<HTMLButtonElement>('#send')!.onclick = () => {
-  if (!roomId || !userId) {
-    log('setup first');
+  if (!userId) {
+    log('create user first');
     return;
   }
-  ws?.send(JSON.stringify({ action: 'sendMessage', roomId, userId, content: `hello ${Date.now()}` }));
+  ws?.send(JSON.stringify({ action: 'sendMessage', userId, content: `hello ${Date.now()}` }));
 };
