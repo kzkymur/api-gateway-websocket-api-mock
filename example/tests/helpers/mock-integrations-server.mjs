@@ -16,7 +16,12 @@ const makeUserId = () => {
 };
 
 const json = (res, status, body) => {
-  res.writeHead(status, { 'content-type': 'application/json' });
+  res.writeHead(status, {
+    'content-type': 'application/json',
+    'access-control-allow-origin': '*',
+    'access-control-allow-methods': 'GET,POST,OPTIONS',
+    'access-control-allow-headers': 'content-type'
+  });
   res.end(JSON.stringify(body));
 };
 
@@ -44,6 +49,16 @@ const postToConnection = async (connectionId, payload) => {
 
 const server = createServer(async (req, res) => {
   try {
+    if (req.method === 'OPTIONS') {
+      res.writeHead(204, {
+        'access-control-allow-origin': '*',
+        'access-control-allow-methods': 'GET,POST,OPTIONS',
+        'access-control-allow-headers': 'content-type'
+      });
+      res.end();
+      return;
+    }
+
     if (req.method === 'GET' && req.url === '/healthz') {
       json(res, 200, { ok: true, subscribers: subscribers.size });
       return;

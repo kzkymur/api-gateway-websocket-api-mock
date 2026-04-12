@@ -1,19 +1,20 @@
 import { serve } from '@hono/node-server';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
-import { Pool } from 'pg';
-import { ulid } from 'ulid';
+import { Pool, PoolClient } from 'pg';
 
 const port = Number(process.env.PORT ?? 3000);
 const host = process.env.HOST ?? '0.0.0.0';
 const dbUrl = process.env.DATABASE_URL ?? 'postgres://chat:chat@localhost:5432/chat';
 const gatewayBaseUrl = process.env.GATEWAY_BASE_URL ?? 'http://localhost:8787/dev';
 const corsOrigin = process.env.CORS_ALLOW_ORIGIN ?? 'http://localhost:5173';
+const defaultRoomName = process.env.DEFAULT_ROOM_NAME ?? 'general';
 
 const pool = new Pool({ connectionString: dbUrl });
 
 const app = new Hono();
 const globalSubscribers = new Set<string>();
+let messagesHasRoomIdColumn: boolean | null = null;
 
 app.use(
   '/api/*',
@@ -57,6 +58,47 @@ const broadcastGlobal = async (payload: unknown) => {
       console.error('broadcast error', connectionId, error);
     }
   }
+};
+
+const hasMessagesRoomIdColumn = async (client: PoolClient) => {
+  if (messagesHasRoomIdColumn !== null) {
+    return messagesHasRoomIdColumn;
+  }
+
+  const result = await client.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+       SELECT 1
+       FROM information_schema.columns
+       WHERE table_schema = 'public'
+         AND table_name = 'messages'
+         AND column_name = 'room_id'
+     )`
+  );
+
+  messagesHasRoomIdColumn = Boolean(result.rows[0]?.exists);
+  return messagesHasRoomIdColumn;
+};
+
+const resolveRoomId = async (client: PoolClient, requestedRoomId?: string) => {
+  if (requestedRoomId) {
+    return requestedRoomId;
+  }
+
+  const existing = await client.query<{ id: string }>(
+    'SELECT id FROM rooms WHERE name = $1 ORDER BY created_at ASC LIMIT 1',
+    [defaultRoomName]
+  );
+
+  if (existing.rows.length > 0) {
+    return existing.rows[0].id;
+  }
+
+  const created = await client.query<{ id: string }>('INSERT INTO rooms (id, name) VALUES ($1, $2) RETURNING id', [
+    crypto.randomUUID(),
+    defaultRoomName
+  ]);
+
+  return created.rows[0].id;
 };
 
 app.get('/healthz', (c) => c.json({ ok: true }));
@@ -121,20 +163,29 @@ app.post('/integrations/default', async (c) => {
 
 app.post('/integrations/send-message', async (c) => {
   const event = await c.req.json<{ requestContext: { connectionId: string }; body: string }>();
-  const input = JSON.parse(event.body) as { userId: string; content: string };
+  const input = JSON.parse(event.body) as { userId: string; content: string; roomId?: string };
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-    const messageId = ulid();
+    const messageId = crypto.randomUUID();
     const createdAt = new Date().toISOString();
+    const includeRoomId = await hasMessagesRoomIdColumn(client);
+    const roomId = includeRoomId ? await resolveRoomId(client, input.roomId) : undefined;
 
-    await client.query('INSERT INTO messages (id, sender_user_id, content, created_at) VALUES ($1, $2, $3, $4)', [
-      messageId,
-      input.userId,
-      input.content,
-      createdAt
-    ]);
+    if (includeRoomId) {
+      await client.query(
+        'INSERT INTO messages (id, room_id, sender_user_id, content, created_at) VALUES ($1, $2, $3, $4, $5)',
+        [messageId, roomId, input.userId, input.content, createdAt]
+      );
+    } else {
+      await client.query('INSERT INTO messages (id, sender_user_id, content, created_at) VALUES ($1, $2, $3, $4)', [
+        messageId,
+        input.userId,
+        input.content,
+        createdAt
+      ]);
+    }
 
     await client.query('COMMIT');
 
@@ -142,6 +193,7 @@ app.post('/integrations/send-message', async (c) => {
       type: 'chat.message.created',
       message: {
         id: messageId,
+        ...(roomId ? { roomId } : {}),
         senderUserId: input.userId,
         content: input.content,
         createdAt
