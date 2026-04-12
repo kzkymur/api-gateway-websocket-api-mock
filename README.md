@@ -30,7 +30,7 @@ docker compose -f docker-compose.example.yml up --build
 - `mock-gateway`: Hono + ws の API Gateway WebSocket API mock（本丸）
 - `example/backend`: Hono + PostgreSQL chat backend（サンプル）
 - `example/frontend`: Vite + TypeScript frontend（サンプル）
-- `example/tests`: frontend なしで実行できる e2e テスト
+- `example/tests`: frontend + mock backend API + mock gateway をまとめて検証する e2e テスト
 
 ## 疎通確認（example 構成）
 
@@ -40,7 +40,7 @@ docker compose -f docker-compose.example.yml up --build
 
 ## E2E Test (Playwright)
 
-frontend リポジトリや frontend プロセスなしで実行できます。
+Playwright から frontend 画面 (`http://127.0.0.1:5173`) にアクセスし、ボタン操作で WebSocket の配信を検証します。
 
 ```bash
 cd example/tests
@@ -51,6 +51,6 @@ npm run test:e2e
 ```
 
 What this test does:
-- Starts an in-memory integration server (`:3100`) and mock gateway (`:8787`) automatically via Playwright `webServer` config.
-- Opens two browser contexts and connects two WebSocket clients to `ws://127.0.0.1:8787/dev`.
-- Sends a `sendMessage` payload from one client and verifies the other client receives `chat.message.created` in real time (and vice versa).
+- Starts a mock backend API/integration server (`:3100`), mock gateway (`:8787`), and frontend (`:5173`) automatically via Playwright `webServer` config.
+- Opens two browser contexts, each browsing the frontend page.
+- Clicks `Create User` and `Send Message` on each client, then verifies the opposite client log includes `chat.message.created` in real time.
