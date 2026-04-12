@@ -51,6 +51,6 @@ npm run test:e2e
 ```
 
 What this test does:
-- Starts backend (`:3000`) and mock gateway (`:8787`) automatically via Playwright `webServer` config.
+- Starts an in-memory integration server (`:3100`) and mock gateway (`:8787`) automatically via Playwright `webServer` config.
 - Opens two browser contexts and connects two WebSocket clients to `ws://127.0.0.1:8787/dev`.
-- Sends messages from both clients and verifies both connections remain open.
+- Sends a `sendMessage` payload from one client and verifies the other client receives `chat.message.created` in real time (and vice versa).

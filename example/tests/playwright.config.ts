@@ -1,13 +1,13 @@
 import { defineConfig } from '@playwright/test';
 
-const backendPort = 3000;
+const integrationsPort = 3100;
 const gatewayPort = 8787;
 
 const routeIntegrations = JSON.stringify({
-  $connect: `http://127.0.0.1:${backendPort}/integrations/connect`,
-  $disconnect: `http://127.0.0.1:${backendPort}/integrations/disconnect`,
-  $default: `http://127.0.0.1:${backendPort}/integrations/default`,
-  sendMessage: `http://127.0.0.1:${backendPort}/integrations/send-message`
+  $connect: `http://127.0.0.1:${integrationsPort}/integrations/connect`,
+  $disconnect: `http://127.0.0.1:${integrationsPort}/integrations/disconnect`,
+  $default: `http://127.0.0.1:${integrationsPort}/integrations/default`,
+  sendMessage: `http://127.0.0.1:${integrationsPort}/integrations/send-message`
 });
 
 export default defineConfig({
@@ -18,9 +18,15 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'npm run dev -- --host 127.0.0.1 --port 3000',
-      cwd: '../backend',
-      url: 'http://127.0.0.1:3000/healthz',
+      command: 'node ./helpers/mock-integrations-server.mjs',
+      cwd: '.',
+      env: {
+        HOST: '127.0.0.1',
+        PORT: `${integrationsPort}`,
+        STAGE: 'dev',
+        GATEWAY_BASE_URL: `http://127.0.0.1:${gatewayPort}/dev`
+      },
+      url: `http://127.0.0.1:${integrationsPort}/healthz`,
       reuseExistingServer: true
     },
     {
