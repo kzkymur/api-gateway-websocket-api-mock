@@ -8,6 +8,13 @@ const gatewayBaseUrl = process.env.GATEWAY_BASE_URL ?? `http://127.0.0.1:8787/${
 const subscribers = new Set();
 let messageSequence = 0;
 
+let userSequence = 0;
+
+const makeUserId = () => {
+  userSequence += 1;
+  return `test-user-${userSequence}`;
+};
+
 const json = (res, status, body) => {
   res.writeHead(status, { 'content-type': 'application/json' });
   res.end(JSON.stringify(body));
@@ -48,6 +55,13 @@ const server = createServer(async (req, res) => {
     }
 
     const event = await parseBody(req);
+
+    if (req.url === '/api/users') {
+      const displayName = typeof event.displayName === 'string' ? event.displayName : `user-${Date.now()}`;
+      json(res, 201, { id: makeUserId(), displayName });
+      return;
+    }
+
     const connectionId = event?.requestContext?.connectionId;
 
     if (req.url === '/integrations/connect') {
