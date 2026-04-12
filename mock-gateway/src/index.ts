@@ -94,7 +94,14 @@ app.post(`/${stage}/@connections/:connectionId`, async (c) => {
 
   const contentType = c.req.header('content-type') ?? 'application/octet-stream';
   const data = await c.req.arrayBuffer();
-  conn.ws.send(Buffer.from(data));
+  const normalizedType = contentType.toLowerCase();
+  const shouldSendText = normalizedType.startsWith('text/') || normalizedType.includes('application/json');
+
+  if (shouldSendText) {
+    conn.ws.send(Buffer.from(data).toString('utf8'));
+  } else {
+    conn.ws.send(Buffer.from(data));
+  }
   conn.lastActiveAt = new Date().toISOString();
   log('send_to_connection', { connectionId, bytes: data.byteLength, contentType });
   return c.json({ ok: true });

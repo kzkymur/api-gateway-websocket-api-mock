@@ -19,13 +19,40 @@ const log = (data: unknown) => {
   logEl.scrollTop = logEl.scrollHeight;
 };
 
+const toMessageText = async (payload: string | Blob | ArrayBuffer | ArrayBufferView) => {
+  if (typeof payload === 'string') {
+    return payload;
+  }
+
+  if (payload instanceof Blob) {
+    return payload.text();
+  }
+
+  if (payload instanceof ArrayBuffer) {
+    return new TextDecoder().decode(new Uint8Array(payload));
+  }
+
+  if (ArrayBuffer.isView(payload)) {
+    return new TextDecoder().decode(payload);
+  }
+
+  return String(payload);
+};
+
 let userId = '';
 let ws: WebSocket | null = null;
 
 const connectWs = () => {
   ws = new WebSocket(wsUrl);
   ws.onopen = () => log('ws connected');
-  ws.onmessage = (event) => log(`ws recv: ${event.data}`);
+  ws.onmessage = async (event) => {
+    const text = await toMessageText(event.data as string | Blob | ArrayBuffer | ArrayBufferView);
+    try {
+      log({ wsRecv: JSON.parse(text) });
+    } catch {
+      log(`ws recv: ${text}`);
+    }
+  };
   ws.onclose = () => log('ws closed');
 };
 
