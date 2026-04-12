@@ -6,7 +6,7 @@ test('2 clients can connect to the WebSocket gateway at the same time', async ({
   const pageA = await contextA.newPage();
   const pageB = await contextB.newPage();
 
-  await Promise.all([pageA.goto('http://127.0.0.1:5173'), pageB.goto('http://127.0.0.1:5173')]);
+  await Promise.all([pageA.goto('about:blank'), pageB.goto('about:blank')]);
 
   const connectClient = async (page: typeof pageA) => {
     return page.evaluate(() => {
