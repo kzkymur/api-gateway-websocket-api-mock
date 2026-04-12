@@ -13,7 +13,7 @@ const corsOrigin = process.env.CORS_ALLOW_ORIGIN ?? 'http://localhost:5173';
 const pool = new Pool({ connectionString: dbUrl });
 
 const app = new Hono();
-const roomSubscriptions = new Map<string, Set<string>>();
+const globalSubscribers = new Set<string>();
 
 app.use(
   '/api/*',
@@ -42,20 +42,19 @@ const sendToConnection = async (connectionId: string, payload: unknown) => {
   return { stale: false };
 };
 
-const broadcastToRoom = async (roomId: string, payload: unknown) => {
-  const subscribers = roomSubscriptions.get(roomId);
-  if (!subscribers || subscribers.size === 0) {
+const broadcastGlobal = async (payload: unknown) => {
+  if (globalSubscribers.size === 0) {
     return;
   }
 
-  for (const connectionId of Array.from(subscribers)) {
+  for (const connectionId of Array.from(globalSubscribers)) {
     try {
       const result = await sendToConnection(connectionId, payload);
       if (result.stale) {
-        subscribers.delete(connectionId);
+        globalSubscribers.delete(connectionId);
       }
     } catch (error) {
-      console.error('broadcast error', roomId, connectionId, error);
+      console.error('broadcast error', connectionId, error);
     }
   }
 };
@@ -71,37 +70,15 @@ app.post('/api/users', async (c) => {
   return c.json({ id: result.rows[0].id, displayName: result.rows[0].display_name }, 201);
 });
 
-app.post('/api/rooms', async (c) => {
-  const { name } = await c.req.json<{ name: string }>();
-  const result = await pool.query('INSERT INTO rooms (id, name) VALUES ($1, $2) RETURNING id, name', [
-    crypto.randomUUID(),
-    name
-  ]);
-  return c.json({ id: result.rows[0].id, name: result.rows[0].name }, 201);
-});
-
-app.post('/api/rooms/:roomId/join', async (c) => {
-  const roomId = c.req.param('roomId');
-  const { userId } = await c.req.json<{ userId: string }>();
-  await pool.query(
-    'INSERT INTO room_members (room_id, user_id) VALUES ($1, $2) ON CONFLICT (room_id, user_id) DO NOTHING',
-    [roomId, userId]
-  );
-  return c.json({ ok: true }, 200);
-});
-
-app.get('/api/rooms/:roomId/messages', async (c) => {
-  const roomId = c.req.param('roomId');
+app.get('/api/messages', async (c) => {
   const limit = Number(c.req.query('limit') ?? '50');
   const before = c.req.query('before');
 
-  const params: unknown[] = [roomId, limit];
-  let sql =
-    'SELECT id, room_id, sender_user_id, content, created_at FROM messages WHERE room_id = $1 ORDER BY created_at DESC LIMIT $2';
+  const params: unknown[] = [limit];
+  let sql = 'SELECT id, sender_user_id, content, created_at FROM messages ORDER BY created_at DESC LIMIT $1';
 
   if (before) {
-    sql =
-      'SELECT id, room_id, sender_user_id, content, created_at FROM messages WHERE room_id = $1 AND created_at < $3::timestamptz ORDER BY created_at DESC LIMIT $2';
+    sql = 'SELECT id, sender_user_id, content, created_at FROM messages WHERE created_at < $2::timestamptz ORDER BY created_at DESC LIMIT $1';
     params.push(before);
   }
 
@@ -111,7 +88,6 @@ app.get('/api/rooms/:roomId/messages', async (c) => {
       .reverse()
       .map((row) => ({
         id: row.id,
-        roomId: row.room_id,
         senderUserId: row.sender_user_id,
         content: row.content,
         createdAt: row.created_at
@@ -121,16 +97,16 @@ app.get('/api/rooms/:roomId/messages', async (c) => {
 
 app.post('/integrations/connect', async (c) => {
   const event = await c.req.json<{ requestContext: { connectionId: string } }>();
-  console.log('connect', event.requestContext.connectionId);
+  const connectionId = event.requestContext.connectionId;
+  globalSubscribers.add(connectionId);
+  console.log('connect', connectionId);
   return c.json({ ok: true });
 });
 
 app.post('/integrations/disconnect', async (c) => {
   const event = await c.req.json<{ requestContext: { connectionId: string } }>();
   const connectionId = event.requestContext.connectionId;
-  for (const subscribers of roomSubscriptions.values()) {
-    subscribers.delete(connectionId);
-  }
+  globalSubscribers.delete(connectionId);
   return c.json({ ok: true });
 });
 
@@ -143,27 +119,9 @@ app.post('/integrations/default', async (c) => {
   return c.json({ ok: true });
 });
 
-app.post('/integrations/join-room', async (c) => {
-  const event = await c.req.json<{ requestContext: { connectionId: string }; body: string }>();
-  const connectionId = event.requestContext.connectionId;
-  const body = JSON.parse(event.body) as { roomId: string; userId: string };
-  const existing = roomSubscriptions.get(body.roomId) ?? new Set<string>();
-  existing.add(connectionId);
-  roomSubscriptions.set(body.roomId, existing);
-
-  await broadcastToRoom(body.roomId, {
-    type: 'chat.room.joined',
-    roomId: body.roomId,
-    userId: body.userId,
-    connectionId
-  });
-
-  return c.json({ ok: true });
-});
-
 app.post('/integrations/send-message', async (c) => {
   const event = await c.req.json<{ requestContext: { connectionId: string }; body: string }>();
-  const input = JSON.parse(event.body) as { roomId: string; userId: string; content: string };
+  const input = JSON.parse(event.body) as { userId: string; content: string };
 
   const client = await pool.connect();
   try {
@@ -171,16 +129,17 @@ app.post('/integrations/send-message', async (c) => {
     const messageId = ulid();
     const createdAt = new Date().toISOString();
 
-    await client.query(
-      'INSERT INTO messages (id, room_id, sender_user_id, content, created_at) VALUES ($1, $2, $3, $4, $5)',
-      [messageId, input.roomId, input.userId, input.content, createdAt]
-    );
+    await client.query('INSERT INTO messages (id, sender_user_id, content, created_at) VALUES ($1, $2, $3, $4)', [
+      messageId,
+      input.userId,
+      input.content,
+      createdAt
+    ]);
 
     await client.query('COMMIT');
 
     const payload = {
       type: 'chat.message.created',
-      roomId: input.roomId,
       message: {
         id: messageId,
         senderUserId: input.userId,
@@ -189,7 +148,7 @@ app.post('/integrations/send-message', async (c) => {
       }
     };
 
-    await broadcastToRoom(input.roomId, payload);
+    await broadcastGlobal(payload);
     return c.json({ ok: true });
   } catch (error) {
     await client.query('ROLLBACK');

@@ -35,7 +35,7 @@ services:
       PORT: 8787
       STAGE: dev
       STRICT_COMPATIBILITY_MODE: "true"
-      ROUTE_INTEGRATIONS_JSON: '{"$$connect":"http://backend:3000/integrations/connect","$$disconnect":"http://backend:3000/integrations/disconnect","$$default":"http://backend:3000/integrations/default","joinRoom":"http://backend:3000/integrations/join-room","sendMessage":"http://backend:3000/integrations/send-message"}'
+      ROUTE_INTEGRATIONS_JSON: '{"$$connect":"http://backend:3000/integrations/connect","$$disconnect":"http://backend:3000/integrations/disconnect","$$default":"http://backend:3000/integrations/default","sendMessage":"http://backend:3000/integrations/send-message"}'
     depends_on:
       - backend
     ports:

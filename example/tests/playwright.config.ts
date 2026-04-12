@@ -7,7 +7,6 @@ const routeIntegrations = JSON.stringify({
   $connect: `http://127.0.0.1:${backendPort}/integrations/connect`,
   $disconnect: `http://127.0.0.1:${backendPort}/integrations/disconnect`,
   $default: `http://127.0.0.1:${backendPort}/integrations/default`,
-  joinRoom: `http://127.0.0.1:${backendPort}/integrations/join-room`,
   sendMessage: `http://127.0.0.1:${backendPort}/integrations/send-message`
 });
 

@@ -1,28 +1,15 @@
-# Realtime Chat Flow Spec
+# Realtime Flow (Global Board)
 
-## 1. Goal
-複数ユーザが同一 room のメッセージを同期的に閲覧・送信できること。
+## 1. 接続
+1. FE は `ws://mock-gateway:8787/dev` に接続
+2. Mock Gateway は `$connect` integration を BE に POST
+3. BE は `connectionId` をグローバル subscriber に登録
 
-## 2. Connection Model
-- FE は `ws://mock-gateway:8787/dev` に接続
-- BE は Mock Gateway Management API `POST /dev/@connections/{connectionId}` で配信
-- 接続管理ストアは v1 で in-memory（後続でRedis拡張可）
+## 2. 投稿
+1. FE は `{"action":"sendMessage","userId":"...","content":"..."}` を送信
+2. Mock Gateway は routeKey=`sendMessage` で BE integration を呼び出し
+3. BE は DB 保存後、全 subscriber に `chat.message.created` を送信
 
-## 3. Sequence: Join and Receive
-1. FE 接続
-2. FE `joinRoom` を送信
-3. BE が接続を room subscriber 集合に登録
-4. FE が `sendMessage` を送信
-5. BE が PostgreSQL に永続化
-6. BE が room subscriber の各 `connectionId` に配信
-7. FE が即時描画
-
-## 4. Delivery Semantics
-- ルーム内配信は at-least-once
-- 同一接続内は送信順を維持
-- 重複受信は FE 側で `message.id` により排除可能
-
-## 5. Failure Handling
-- `410 Gone`: 接続切れとして subscriber から除去
-- DB insert 失敗: 送信エラーイベントを送信元へ返却
-- Integration 呼び出し失敗: BE ログ記録、必要に応じて再送（v2）
+## 3. 切断
+1. FE 切断時に Mock Gateway が `$disconnect` integration を呼ぶ
+2. BE は subscriber から `connectionId` を削除

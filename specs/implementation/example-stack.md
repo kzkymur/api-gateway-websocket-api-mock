@@ -19,7 +19,7 @@ docker compose -f docker-compose.example.yml up --build
 
 ## 3. 疎通確認項目
 1. `GET http://localhost:3000/healthz` が `{"ok":true}` を返す（example 起動時）。
-2. FE で Setup -> Send を実行し、`chat.message.created` を受信する。
+2. FE で Create User -> Send Message を実行し、`chat.message.created` を受信する。
 3. `GET http://localhost:8787/dev/@connections/{id}` は有効接続で200、切断後410。
 
 ## 4. 互換性差分

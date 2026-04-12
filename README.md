@@ -34,9 +34,9 @@ docker compose -f docker-compose.example.yml up --build
 
 ## 疎通確認（example 構成）
 
-1. Frontend で `Create User/Room & Join` を押す
+1. Frontend で `Create User` を押す
 2. `Send Message` を押す
-3. 画面ログに `chat.message.created` が出れば成功
+3. 画面ログに `chat.message.created` が出れば成功（グローバル掲示板）
 
 ## E2E Test (Playwright)
 
