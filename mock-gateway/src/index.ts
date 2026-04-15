@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { serve } from '@hono/node-server';
 import { ulid } from 'ulid';
 import { WebSocketServer, type WebSocket } from 'ws';
+import { parseRouteSelectionExpression, resolveRouteKeyFromText } from './route-selection.js';
 
 interface ConnectionInfo {
   connectionId: string;
@@ -17,6 +18,7 @@ const port = Number(process.env.PORT ?? 8787);
 const host = process.env.HOST ?? '0.0.0.0';
 const stage = process.env.STAGE ?? 'dev';
 const strictMode = (process.env.STRICT_COMPATIBILITY_MODE ?? 'true') === 'true';
+const routeSelectionExpression = process.env.ROUTE_SELECTION_EXPRESSION ?? '$request.body.action';
 const integrations: Integrations = JSON.parse(process.env.ROUTE_INTEGRATIONS_JSON ?? '{}');
 
 const app = new Hono();
@@ -25,18 +27,6 @@ const wsPathMap = new Map<string, string>();
 
 const log = (kind: string, payload: Record<string, unknown>) => {
   console.log(JSON.stringify({ kind, ts: new Date().toISOString(), ...payload }));
-};
-
-const resolveConnectionId = (req: Request): string | undefined => {
-  const url = new URL(req.url);
-  const parts = url.pathname.split('/').filter(Boolean);
-  const stagePart = parts[0];
-  const marker = parts[1];
-  const connectionId = parts[2];
-  if (stagePart !== stage || marker !== '@connections') {
-    return undefined;
-  }
-  return connectionId;
 };
 
 const postIntegration = async (routeKey: string, eventType: 'CONNECT' | 'DISCONNECT' | 'MESSAGE', body: string | null, connectionId: string) => {
@@ -64,12 +54,26 @@ const postIntegration = async (routeKey: string, eventType: 'CONNECT' | 'DISCONN
   };
 
   log('integration_call', { routeKey, uri, connectionId });
-  await fetch(uri, {
+  const response = await fetch(uri, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(event)
   });
+  if (!response.ok) {
+    const responseText = await response.text();
+    throw new Error(
+      `Integration request failed: routeKey=${routeKey} status=${response.status}${responseText ? ` body=${responseText}` : ''}`
+    );
+  }
 };
+
+const parsedRouteSelectionExpression = parseRouteSelectionExpression(routeSelectionExpression);
+if (!parsedRouteSelectionExpression) {
+  log('route_selection_expression_invalid', {
+    routeSelectionExpression,
+    fallback: '$request.body.action'
+  });
+}
 
 app.get(`/${stage}/@connections/:connectionId`, (c) => {
   const connectionId = c.req.param('connectionId');
@@ -177,7 +181,14 @@ wss.on('connection', async (ws, req) => {
   });
 
   log('connect', { connectionId, path });
-  await postIntegration('$connect', 'CONNECT', null, connectionId);
+  try {
+    await postIntegration('$connect', 'CONNECT', null, connectionId);
+  } catch (error) {
+    log('integration_error', { connectionId, routeKey: '$connect', error: String(error) });
+    ws.close(1011, 'Integration error');
+    connections.delete(connectionId);
+    return;
+  }
 
   ws.on('message', async (raw) => {
     const conn = connections.get(connectionId);
@@ -186,16 +197,7 @@ wss.on('connection', async (ws, req) => {
     }
     conn.lastActiveAt = new Date().toISOString();
     const text = raw.toString();
-    let routeKey = '$default';
-
-    try {
-      const parsed = JSON.parse(text) as { action?: unknown };
-      if (typeof parsed.action === 'string') {
-        routeKey = parsed.action;
-      }
-    } catch {
-      routeKey = '$default';
-    }
+    const routeKey = resolveRouteKeyFromText(text, routeSelectionExpression);
 
     log('route_resolved', { connectionId, routeKey });
 
@@ -210,6 +212,10 @@ wss.on('connection', async (ws, req) => {
   ws.on('close', async () => {
     connections.delete(connectionId);
     log('disconnect', { connectionId });
-    await postIntegration('$disconnect', 'DISCONNECT', null, connectionId);
+    try {
+      await postIntegration('$disconnect', 'DISCONNECT', null, connectionId);
+    } catch (error) {
+      log('integration_error', { connectionId, routeKey: '$disconnect', error: String(error) });
+    }
   });
 });

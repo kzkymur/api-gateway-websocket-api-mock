@@ -7,6 +7,7 @@ const gatewayBaseUrl = process.env.GATEWAY_BASE_URL ?? `http://127.0.0.1:8787/${
 
 const subscribers = new Set();
 let messageSequence = 0;
+const integrationEvents = [];
 
 let userSequence = 0;
 
@@ -64,6 +65,17 @@ const server = createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === 'GET' && req.url === '/_debug/events') {
+      json(res, 200, { ok: true, events: integrationEvents });
+      return;
+    }
+
+    if (req.method === 'DELETE' && req.url === '/_debug/events') {
+      integrationEvents.length = 0;
+      json(res, 200, { ok: true });
+      return;
+    }
+
     if (req.method !== 'POST') {
       json(res, 404, { ok: false, message: 'Not Found' });
       return;
@@ -78,6 +90,14 @@ const server = createServer(async (req, res) => {
     }
 
     const connectionId = event?.requestContext?.connectionId;
+    if (req.url?.startsWith('/integrations/')) {
+      integrationEvents.push({
+        path: req.url,
+        routeKey: event?.requestContext?.routeKey,
+        connectionId: typeof connectionId === 'string' ? connectionId : null,
+        body: typeof event?.body === 'string' ? event.body : null
+      });
+    }
 
     if (req.url === '/integrations/connect') {
       if (typeof connectionId === 'string') {
@@ -108,6 +128,10 @@ const server = createServer(async (req, res) => {
 
     if (req.url === '/integrations/send-message') {
       const input = JSON.parse(event.body ?? '{}');
+      if (input?.content === '__force_fail__') {
+        json(res, 500, { ok: false, message: 'forced integration failure' });
+        return;
+      }
       const createdAt = new Date().toISOString();
       const payload = {
         type: 'chat.message.created',
