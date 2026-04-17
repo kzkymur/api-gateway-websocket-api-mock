@@ -1,42 +1,56 @@
 ---
 name: mock-gateway-usage
-description: Step-by-step workflow to run mock-gateway locally, verify WebSocket connectivity, configure route integrations, and validate Management API delivery. Always use this when the user asks how to start mock-gateway, reproduce API Gateway WebSocket behavior locally, or debug delivery/routing failures.
+description: Image-first workflow for running mock-gateway via GHCR, validating WebSocket and Management API behavior, and integrating route callbacks into local development. Always use this when users ask how to consume mock-gateway from another project, pin versions, or debug delivery/routing failures.
 ---
 
 # Mock Gateway Usage
 
-This skill explains how to start `mock-gateway/` in a local environment and integrate it into day-to-day backend/frontend development.
+This skill explains how to consume `mock-gateway` as a published container image and integrate it into application development without cloning/building source by default.
 
 ## Goals
 
-- Start `mock-gateway` and verify `healthz`
+- Start `mock-gateway` from GHCR and verify `healthz`
+- Pin image version for reproducible environments
 - Confirm WebSocket connection and route resolution
 - Enable backend integration via `ROUTE_INTEGRATIONS_JSON`
 - Send data through the Management API (`/{stage}/@connections/{connectionId}`)
 
 ## Workflow
 
-1. Confirm runtime mode first: `Docker Compose` or direct `Node.js`.
-2. Decide `stage`, strict mode, and integration endpoint URLs.
-3. Validate in order: `healthz` -> WebSocket connect/send -> integration callback -> Management API send.
-4. If anything fails, triage with log `kind` values and HTTP status codes.
+1. Use GHCR image first (`ghcr.io/kzkymur/api-gateway-websocket-api-mock`), not local build.
+2. Pin explicit image tag (for example `v0.1.0`) instead of `latest`.
+3. Set `stage`, strict mode, and integration URLs.
+4. Validate in order: `healthz` -> WS connect/send -> integration callback -> Management API send.
+5. If anything fails, triage by log `kind` and HTTP status.
 
 ## Prerequisites
 
-- Docker mode:
-  - Docker and Docker Compose available
-- Node.js mode:
-  - Node.js 22.x
-  - Dependencies installable from `mock-gateway/package.json`
+- Docker and Docker Compose
+- Access to pull GHCR images (`docker login ghcr.io` when needed)
 
-## Startup
+## Recommended Startup (Image-Based)
 
-### A. Start with Docker Compose
+Create or update `docker-compose.yml` in the consumer project:
 
-Run in repository root:
+```yaml
+services:
+  mock-gateway:
+    image: ghcr.io/kzkymur/api-gateway-websocket-api-mock:v0.1.0
+    pull_policy: always
+    environment:
+      PORT: 8787
+      STAGE: dev
+      STRICT_COMPATIBILITY_MODE: "true"
+      ROUTE_INTEGRATIONS_JSON: '{}'
+    ports:
+      - "8787:8787"
+```
+
+Start:
 
 ```bash
-docker compose up --build
+docker compose pull mock-gateway
+docker compose up -d mock-gateway
 ```
 
 Verify:
@@ -49,21 +63,15 @@ Expected output:
 
 - JSON similar to `{"ok":true,"stage":"dev","connections":0}`
 
-### B. Start directly with Node.js
+## Versioning Guidance
 
-Run in `mock-gateway/`:
-
-```bash
-npm install
-PORT=8787 STAGE=dev STRICT_COMPATIBILITY_MODE=true ROUTE_INTEGRATIONS_JSON='{}' npm run dev
-```
-
-Production-like run (no watch):
-
-```bash
-npm run build
-PORT=8787 STAGE=dev STRICT_COMPATIBILITY_MODE=true ROUTE_INTEGRATIONS_JSON='{}' npm start
-```
+- Prefer fixed tags in application environments:
+  - `ghcr.io/kzkymur/api-gateway-websocket-api-mock:v0.1.0`
+- Avoid depending on mutable `latest` in CI/staging/production-like test environments.
+- Upgrade flow:
+  1. Change image tag in compose
+  2. `docker compose pull mock-gateway`
+  3. `docker compose up -d mock-gateway`
 
 ## Environment Variables
 
@@ -164,6 +172,16 @@ Failure diagnosis:
 - `410 Gone`:
   - Verify connection is active with `GET /@connections/{id}` first
 
+## Authentication to GHCR (When Pull Fails)
+
+If image pull returns auth errors:
+
+```bash
+export GITHUB_TOKEN='<token-with-read:packages>'
+printf '%s' "$GITHUB_TOKEN" | docker login ghcr.io -u kzkymur --password-stdin
+docker compose pull mock-gateway
+```
+
 ## Development Integration Pattern
 
 - Keep backend focused on integration handlers, not direct WS accept logic.
@@ -171,13 +189,27 @@ Failure diagnosis:
 - Use `POST /@connections/{id}` as the single server-push channel.
 - Keep strict mode `true` for compatibility-focused verification; disable only for explicit local-only extensions.
 
+## Fallback: Local Source Build (Only When Needed)
+
+Use this only if image pull is unavailable or source changes are being developed:
+
+```bash
+docker build -t local/mock-gateway:dev ./mock-gateway
+docker run --rm -p 8787:8787 \
+  -e PORT=8787 \
+  -e STAGE=dev \
+  -e STRICT_COMPATIBILITY_MODE=true \
+  -e ROUTE_INTEGRATIONS_JSON='{}' \
+  local/mock-gateway:dev
+```
+
 ## Response Template
 
 When answering a user, structure the response in this order:
 
-1. Startup mode (Docker or Node.js)
-2. Exact commands
-3. `healthz` and WS connectivity checks
+1. Image reference and fixed version tag
+2. Compose snippet using `image:` (not `build:`)
+3. Startup and `healthz` check
 4. Integration mapping setup
-5. Management API delivery check
-6. Debug checklist (log kind and HTTP status)
+5. WS + Management API verification
+6. Debug checklist (log kind / status code / GHCR auth)
