@@ -64,8 +64,9 @@
 - Gateway 内部例外は FE には close code `1011` を返し、ログへ記録
 
 ## 6. Observability (v1)
-- ログ種別: `connect`, `disconnect`, `message_in`, `route_resolved`, `integration_call`, `send_to_connection`
+- ログ種別: `connect`, `disconnect`, `message_buffered`, `message_buffer_flushed`, `message_dropped`, `route_resolved`, `integration_call`, `send_to_connection`
 - ログ形式: JSON lines
+- `/healthz` に dropped message メトリクスを含める（`droppedMessages.total`, `droppedMessages.reasons`）
 
 ## 7. Integration URI Configuration
 - 設定キー: `ROUTE_INTEGRATIONS_JSON`

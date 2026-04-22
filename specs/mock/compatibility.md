@@ -26,6 +26,7 @@
 ## 4. Parity Tests
 - 正常系
   - connect -> message -> route integration invoke -> postToConnection -> FE receive
+  - open 直後に最初の action message を 1 回送っても route integration が呼ばれる
 - 異常系
   - unknown connection 送信 -> 410
   - invalid JSON -> `$default`

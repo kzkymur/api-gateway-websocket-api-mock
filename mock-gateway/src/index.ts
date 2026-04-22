@@ -10,9 +10,21 @@ interface ConnectionInfo {
   lastActiveAt: string;
   stage: string;
   ws: WebSocket;
+  connectReady: boolean;
+  pendingMessages: string[];
+  messageChain: Promise<void>;
 }
 
 type Integrations = Record<string, string>;
+type DropReason =
+  | 'connect_integration_pending_buffer_full'
+  | 'connect_integration_failed'
+  | 'connection_closed_before_connect_ready'
+  | 'connection_not_found_before_processing';
+type DroppedMessageMetrics = {
+  total: number;
+  reasons: Partial<Record<DropReason, number>>;
+};
 
 const port = Number(process.env.PORT ?? 8787);
 const host = process.env.HOST ?? '0.0.0.0';
@@ -20,13 +32,21 @@ const stage = process.env.STAGE ?? 'dev';
 const strictMode = (process.env.STRICT_COMPATIBILITY_MODE ?? 'true') === 'true';
 const routeSelectionExpression = process.env.ROUTE_SELECTION_EXPRESSION ?? '$request.body.action';
 const integrations: Integrations = JSON.parse(process.env.ROUTE_INTEGRATIONS_JSON ?? '{}');
+const connectMessageBufferLimit = Math.max(0, Number(process.env.CONNECT_MESSAGE_BUFFER_LIMIT ?? 64));
 
 const app = new Hono();
 const connections = new Map<string, ConnectionInfo>();
 const wsPathMap = new Map<string, string>();
+const droppedMessageMetrics: DroppedMessageMetrics = { total: 0, reasons: {} };
 
 const log = (kind: string, payload: Record<string, unknown>) => {
   console.log(JSON.stringify({ kind, ts: new Date().toISOString(), ...payload }));
+};
+
+const incrementDroppedMessages = (reason: DropReason, connectionId: string, count = 1) => {
+  droppedMessageMetrics.total += count;
+  droppedMessageMetrics.reasons[reason] = (droppedMessageMetrics.reasons[reason] ?? 0) + count;
+  log('message_dropped', { connectionId, reason, count });
 };
 
 const postIntegration = async (routeKey: string, eventType: 'CONNECT' | 'DISCONNECT' | 'MESSAGE', body: string | null, connectionId: string) => {
@@ -65,6 +85,27 @@ const postIntegration = async (routeKey: string, eventType: 'CONNECT' | 'DISCONN
       `Integration request failed: routeKey=${routeKey} status=${response.status}${responseText ? ` body=${responseText}` : ''}`
     );
   }
+};
+
+const queueMessageForProcessing = (conn: ConnectionInfo, messageText: string, source: 'buffered' | 'live') => {
+  conn.messageChain = conn.messageChain.then(async () => {
+    let routeKey: string | null = null;
+    try {
+      const activeConnection = connections.get(conn.connectionId);
+      if (!activeConnection) {
+        incrementDroppedMessages('connection_not_found_before_processing', conn.connectionId);
+        return;
+      }
+
+      routeKey = resolveRouteKeyFromText(messageText, routeSelectionExpression);
+      log('route_resolved', { connectionId: conn.connectionId, routeKey, source });
+
+      await postIntegration(routeKey, 'MESSAGE', messageText, conn.connectionId);
+    } catch (error) {
+      log('integration_error', { connectionId: conn.connectionId, routeKey: routeKey ?? 'unknown', error: String(error) });
+      conn.ws.close(1011, 'Integration error');
+    }
+  });
 };
 
 const parsedRouteSelectionExpression = parseRouteSelectionExpression(routeSelectionExpression);
@@ -142,7 +183,14 @@ app.post('/_mock/broadcast', async (c) => {
   return c.json({ success, failed });
 });
 
-app.get('/healthz', (c) => c.json({ ok: true, stage, connections: connections.size }));
+app.get('/healthz', (c) =>
+  c.json({
+    ok: true,
+    stage,
+    connections: connections.size,
+    droppedMessages: droppedMessageMetrics
+  })
+);
 
 const server = serve({ fetch: app.fetch, port, hostname: host }, (info) => {
   console.log(`mock-gateway listening on http://${host}:${info.port}`);
@@ -171,51 +219,88 @@ wss.on('connection', async (ws, req) => {
   }
 
   const connectionId = ulid();
+  let shouldInvokeDisconnectIntegration = true;
   const now = new Date().toISOString();
   connections.set(connectionId, {
     connectionId,
     connectedAt: now,
     lastActiveAt: now,
     stage,
-    ws
+    ws,
+    connectReady: false,
+    pendingMessages: [],
+    messageChain: Promise.resolve()
   });
 
   log('connect', { connectionId, path });
-  try {
-    await postIntegration('$connect', 'CONNECT', null, connectionId);
-  } catch (error) {
-    log('integration_error', { connectionId, routeKey: '$connect', error: String(error) });
-    ws.close(1011, 'Integration error');
-    connections.delete(connectionId);
-    return;
-  }
-
-  ws.on('message', async (raw) => {
+  ws.on('message', (raw) => {
     const conn = connections.get(connectionId);
     if (!conn) {
       return;
     }
     conn.lastActiveAt = new Date().toISOString();
     const text = raw.toString();
-    const routeKey = resolveRouteKeyFromText(text, routeSelectionExpression);
 
-    log('route_resolved', { connectionId, routeKey });
-
-    try {
-      await postIntegration(routeKey, 'MESSAGE', text, connectionId);
-    } catch (error) {
-      log('integration_error', { connectionId, routeKey, error: String(error) });
-      ws.close(1011, 'Integration error');
+    if (!conn.connectReady) {
+      if (conn.pendingMessages.length >= connectMessageBufferLimit) {
+        incrementDroppedMessages('connect_integration_pending_buffer_full', connectionId);
+        return;
+      }
+      conn.pendingMessages.push(text);
+      log('message_buffered', {
+        connectionId,
+        bufferedCount: conn.pendingMessages.length,
+        bufferLimit: connectMessageBufferLimit
+      });
+      return;
     }
+
+    queueMessageForProcessing(conn, text, 'live');
   });
 
   ws.on('close', async () => {
+    const conn = connections.get(connectionId);
+    if (conn && conn.pendingMessages.length > 0) {
+      incrementDroppedMessages('connection_closed_before_connect_ready', connectionId, conn.pendingMessages.length);
+      conn.pendingMessages = [];
+    }
     connections.delete(connectionId);
     log('disconnect', { connectionId });
+    if (!shouldInvokeDisconnectIntegration) {
+      return;
+    }
     try {
       await postIntegration('$disconnect', 'DISCONNECT', null, connectionId);
     } catch (error) {
       log('integration_error', { connectionId, routeKey: '$disconnect', error: String(error) });
     }
   });
+
+  try {
+    await postIntegration('$connect', 'CONNECT', null, connectionId);
+    const conn = connections.get(connectionId);
+    if (!conn) {
+      return;
+    }
+
+    conn.connectReady = true;
+    const bufferedMessages = conn.pendingMessages;
+    conn.pendingMessages = [];
+    if (bufferedMessages.length > 0) {
+      log('message_buffer_flushed', { connectionId, bufferedCount: bufferedMessages.length });
+      for (const bufferedMessage of bufferedMessages) {
+        queueMessageForProcessing(conn, bufferedMessage, 'buffered');
+      }
+    }
+  } catch (error) {
+    const conn = connections.get(connectionId);
+    if (conn && conn.pendingMessages.length > 0) {
+      incrementDroppedMessages('connect_integration_failed', connectionId, conn.pendingMessages.length);
+      conn.pendingMessages = [];
+    }
+    log('integration_error', { connectionId, routeKey: '$connect', error: String(error) });
+    shouldInvokeDisconnectIntegration = false;
+    ws.close(1011, 'Integration error');
+    connections.delete(connectionId);
+  }
 });

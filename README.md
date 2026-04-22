@@ -53,7 +53,7 @@ curl -sS http://localhost:8787/healthz
 Expected response:
 
 ```json
-{"ok":true,"stage":"dev","connections":0}
+{"ok":true,"stage":"dev","connections":0,"droppedMessages":{"total":0,"reasons":{}}}
 ```
 
 Connect your client to:
@@ -148,6 +148,8 @@ curl -sS http://localhost:8787/healthz
   - `true`: disables `/_mock/broadcast`
 - `ROUTE_SELECTION_EXPRESSION` (default: `$request.body.action`)
 - `ROUTE_INTEGRATIONS_JSON` (default: `{}`)
+- `CONNECT_MESSAGE_BUFFER_LIMIT` (default: `64`)
+  - max buffered message count per connection while waiting for `$connect` integration completion
 
 ## Integration Mapping
 
@@ -233,6 +235,7 @@ npm --prefix mock-gateway test
   - Check `STAGE` and connect to `ws://host:port/{stage}` when strict mode is enabled.
 - Route not invoked:
   - Check payload shape, `ROUTE_SELECTION_EXPRESSION`, and `ROUTE_INTEGRATIONS_JSON`.
+  - Check `message_dropped` logs and `/healthz` -> `droppedMessages` for drop counts/reasons.
 - Integration call fails:
   - Check gateway logs (`integration_error`) and backend reachability.
 - Pull from GHCR fails:
